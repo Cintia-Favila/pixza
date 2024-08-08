@@ -1,9 +1,11 @@
 package org.switf.pixza.telegram;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.*;
 import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
@@ -13,6 +15,8 @@ import org.switf.pixza.request.PlaceRequest;
 import org.switf.pixza.response.CategoryResponse;
 import org.switf.pixza.response.LoginResponse;
 import org.switf.pixza.response.PlaceResponse;
+import org.switf.pixza.services.CategoryService;
+import org.switf.pixza.services.PlaceService;
 import org.telegram.telegrambots.bots.DefaultBotOptions;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
@@ -22,6 +26,11 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMa
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
+import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -30,7 +39,15 @@ import java.util.Map;
 import java.util.*;
 
 @Component
+@Service
 public class AdminBot extends TelegramLongPollingBot {
+
+    @Autowired
+    private CategoryService categoryService;
+
+    @Autowired
+    private PlaceService placeService;
+
     private final String botName;
     private final String botToken;
     private final RestTemplate restTemplate;
@@ -61,7 +78,8 @@ public class AdminBot extends TelegramLongPollingBot {
     @Override
     public void onUpdateReceived(Update update) {
         if (update.hasMessage()) {
-            handleMessage(update.getMessage());
+            Message message = update.getMessage();
+            handleMessage(message);
         } else if (update.hasCallbackQuery()) {
             handleCallback(update.getCallbackQuery().getMessage().getChatId(), update.getCallbackQuery().getData());
         }
@@ -112,6 +130,8 @@ public class AdminBot extends TelegramLongPollingBot {
             case "edit_place" -> promptForPlaceIdToEdit(chatId);
             case "delete_place" -> promptForPlaceIdToDelete (chatId);
             case "places" -> promptForListCategoriesUser(chatId);
+            case "image" -> promptForAddImgen(chatId);
+            case "search_place" -> promptForSearch(chatId);
             default -> sendText(chatId, "Acción no reconocida: " + callbackData);
         }
     }
@@ -127,7 +147,7 @@ public class AdminBot extends TelegramLongPollingBot {
     }
 
     private void promptForListCategoriesUser (Long chatId) {
-        sendText(chatId, "Elige el ID de la categoria:");
+        sendText(chatId, "Elige una categoría:");
         listCategoriesUser(chatId);
         userStates.put(chatId, "SENDING_PLACES");
     }
@@ -138,12 +158,13 @@ public class AdminBot extends TelegramLongPollingBot {
     }
 
     private void promptForCategoryIdToEdit(Long chatId) {
-        sendText(chatId, "ID de la categoría a editar:");
-        userStates.put(chatId, "EDIT_CATEGORY_ID");
+        sendText(chatId, "Nombre de la categoría a editar:");
+        userStates.put(chatId, "EDIT_CATEGORY_NAME");
     }
 
     private void promptForCategoryIdToDelete(Long chatId) {
-        sendText(chatId, "ID de la categoría a eliminar:");
+        sendText(chatId, "Nombre de la categoría a eliminar:");
+        listCategoriesUser(chatId);
         userStates.put(chatId, "DELETING_CATEGORY");
     }
 
@@ -153,13 +174,23 @@ public class AdminBot extends TelegramLongPollingBot {
     }
 
     private void promptForPlaceIdToEdit (Long chatid){
-        sendText(chatid, "ID del lugar a editar:");
-        userStates.put(chatid, "EDIT_PLACE_ID");
+        sendText(chatid, "Nombre del lugar a editar:");
+        userStates.put(chatid, "EDIT_PLACE_");
     }
 
     private void promptForPlaceIdToDelete(Long chatId) {
-        sendText(chatId, "ID del lugar a eliminar:");
+        sendText(chatId, "Nombre del lugar a eliminar:");
         userStates.put(chatId, "DELETING_PLACE");
+    }
+
+    private void promptForAddImgen (Long chatId){
+        sendText(chatId, "Elija el nombre del lugar para cargar la imagen");
+        listPlacesWithoutMenu(chatId);
+        userStates.put(chatId, "EDIT_PLACE_IMAGE_ID");
+    }
+    private void promptForSearch (Long chatId){
+        sendText(chatId, "Ingrese el parámetro a buscar:");
+        userStates.put(chatId, "SEARCHING_PLACE");
     }
 
     private void handleState(Message message) {
@@ -174,12 +205,14 @@ public class AdminBot extends TelegramLongPollingBot {
         switch (state) {
             case "LOGIN_USER" -> handleLoginUser(chatId, message.getText());
             case "ADDING_CATEGORY" -> handleAddCategory(chatId, message.getText());
-            case "EDIT_CATEGORY_ID" -> handleEditCategoryId(chatId, message.getText());
+            case "EDIT_CATEGORY_NAME" -> handleEditCategoryId(chatId, message.getText());
             case "DELETING_CATEGORY" -> handleDeleteCategory(chatId, message.getText());
             case "ADDING_PLACE_NAME" -> handleAddPlaceName(chatId, message.getText());
-            case "EDIT_PLACE_ID" -> handleEditPlaceId(chatId, message.getText());
+            case "EDIT_PLACE_" -> handleEditPlaceId(chatId, message.getText());
             case "DELETING_PLACE" -> handleDeletePlace(chatId, message.getText());
             case "SENDING_PLACES" -> handleSendingPlaces(chatId, message.getText());
+            case "EDIT_PLACE_IMAGE_ID" -> handleEditPlaceImageId(chatId, message.getText());
+            case "SEARCHING_PLACE" -> handleSearchingPlace(chatId, message.getText());
             default -> handlePlaceState(chatId, state, message.getText());
         }
     }
@@ -193,13 +226,13 @@ public class AdminBot extends TelegramLongPollingBot {
         addCategory(chatId, category);
     }
 
-    private void handleEditCategoryId(Long chatId, String categoryId) {
+    private void handleEditCategoryId(Long chatId, String categoryName) {
         sendText(chatId, "Nuevo nombre de la categoría:");
-        userStates.put(chatId, "EDIT_CATEGORY_NAME_" + categoryId);
+        userStates.put(chatId, "EDIT_CATEGORY_NAME_" + categoryName);
     }
 
-    private void handleDeleteCategory(Long chatId, String categoryId) {
-        deleteCategory(chatId, categoryId);
+    private void handleDeleteCategory(Long chatId, String categoryName) {
+        deleteCategory(chatId, categoryName);
     }
 
     private void handleAddPlaceName(Long chatId, String placeName) {
@@ -207,13 +240,13 @@ public class AdminBot extends TelegramLongPollingBot {
         userStates.put(chatId, "ADDING_PLACE_DESCRIPTION_" + placeName);
     }
 
-    private void handleEditPlaceId (Long chatId, String idPlace){
+    private void handleEditPlaceId (Long chatId, String placeName){
         sendText(chatId, "Nuevo nombre del lugar:");
-        userStates.put(chatId, "EDIT_PLACE_NAME_" + idPlace);
+        userStates.put(chatId, "EDIT_PLACE_NAME_" + placeName);
     }
 
-    private void handleDeletePlace(Long chatId, String IdPlace) {
-        deletePlace(chatId, IdPlace);
+    private void handleDeletePlace(Long chatId, String placeName) {
+        deletePlace(chatId, placeName);
     }
 
     private void handleSendingPlaces(Long chatId, String idCategory) {
@@ -226,8 +259,8 @@ public class AdminBot extends TelegramLongPollingBot {
             String username = state.substring("LOGIN_PASSWORD_".length());
             login(chatId, username, text);
         } else if (state.startsWith("EDIT_CATEGORY_NAME_")) {
-            String categoryId = state.substring("EDIT_CATEGORY_NAME_".length());
-            editCategory(chatId, categoryId, text);
+            String newCategoryName = state.substring("EDIT_CATEGORY_NAME_".length());
+            editCategory(chatId, newCategoryName, text);
         } else if (state.startsWith("ADDING_PLACE_DESCRIPTION_")) {
             String placeName = state.substring("ADDING_PLACE_DESCRIPTION_".length());
             handleAddPlaceDescription(chatId, placeName, text);
@@ -243,26 +276,29 @@ public class AdminBot extends TelegramLongPollingBot {
             String placeAddress = parts[5];
             handleAddPlaceCategory(chatId, placeName, placeDescription, placeAddress, text);
         } else if (state.startsWith("EDIT_PLACE_NAME_")) {
-            String idPlace = state.substring("EDIT_PLACE_NAME_".length());
-            handleEditPlaceName(chatId, idPlace, text);
+            String placeName = state.substring("EDIT_PLACE_NAME_".length());
+            handleEditPlaceName(chatId, placeName, text);
         } else if (state.startsWith("EDIT_PLACE_DESCRIPTION_")) {
             String[] parts = state.split("_");
-            String idPlace = parts[3];
+            String placeName = parts[3];
             String newPlaceName = parts[4];
-            handleEditPlaceDescription(chatId, idPlace, newPlaceName, text);
+            handleEditPlaceDescription(chatId, placeName, newPlaceName, text);
         } else if (state.startsWith("EDIT_PLACE_ADDRESS_")) {
             String[] parts = state.split("_");
-            String idPlace = parts[3];
+            String placeName = parts[3];
             String newPlaceName = parts[4];
             String newDescription = parts[5];
-            handleEditPlaceAddress(chatId, idPlace, newPlaceName, newDescription, text);
+            handleEditPlaceAddress(chatId, placeName, newPlaceName, newDescription, text);
         } else if (state.startsWith("EDIT_PLACE_CATEGORY_")) {
             String[] parts = state.split("_");
-            String idPlace = parts[3];
+            String placeName = parts[3];
             String newPlaceName = parts[4];
             String newDescription = parts[5];
             String newAddress = parts[6];
-            handleEditPlaceCategory(chatId, idPlace, newPlaceName, newDescription, newAddress, text);
+            handleEditPlaceCategory(chatId, placeName, newPlaceName, newDescription, newAddress, text);
+        } else if (state.startsWith("EDIT_PLACE_IMAGE_")) {
+            String idPlace = state.substring("EDIT_PLACE_IMAGE_".length());
+            handleEditPlaceImage(chatId, idPlace, text);
         }
     }
 
@@ -272,31 +308,46 @@ public class AdminBot extends TelegramLongPollingBot {
     }
 
     private void handleAddPlaceAddress(Long chatId, String placeName, String description, String address) {
-        sendText(chatId, "ID de la categoría:");
+        sendText(chatId, "Elija una categoría:");
+        listCategoriesUser(chatId);
         userStates.put(chatId, "ADDING_PLACE_CATEGORY_" + placeName + "_" + description + "_" + address);
     }
 
-    private void handleAddPlaceCategory(Long chatId, String placeName, String description, String address, String categoryId) {
-        addPlace(chatId, placeName, description, address, categoryId);
+    private void handleAddPlaceCategory(Long chatId, String placeName, String description, String address, String category) {
+        addPlace(chatId, placeName, description, address, category);
     }
 
-    private void handleEditPlaceName(Long chatId, String idPlace, String newPlaceName) {
+    private void handleEditPlaceName(Long chatId, String placeName, String newPlaceName) {
         sendText(chatId, "Nueva descripción del lugar:");
-        userStates.put(chatId, "EDIT_PLACE_DESCRIPTION_" + idPlace + "_" + newPlaceName);
+        userStates.put(chatId, "EDIT_PLACE_DESCRIPTION_" + placeName + "_" + newPlaceName);
     }
 
-    private void handleEditPlaceDescription(Long chatId, String idPlace, String newPlaceName, String newDescription) {
+    private void handleEditPlaceDescription(Long chatId, String placeName, String newPlaceName, String newDescription) {
         sendText(chatId, "Nueva dirección del lugar:");
-        userStates.put(chatId, "EDIT_PLACE_ADDRESS_" + idPlace + "_" + newPlaceName + "_" + newDescription);
+        userStates.put(chatId, "EDIT_PLACE_ADDRESS_" + placeName + "_" + newPlaceName + "_" + newDescription);
     }
 
-    private void handleEditPlaceAddress(Long chatId, String idPlace, String newPlaceName, String newDescription, String newAddress) {
-        sendText(chatId, "Nuevo ID de la categoría:");
-        userStates.put(chatId, "EDIT_PLACE_CATEGORY_" + idPlace + "_" + newPlaceName + "_" + newDescription + "_" + newAddress);
+    private void handleEditPlaceAddress(Long chatId, String placeName, String newPlaceName, String newDescription, String newAddress) {
+        sendText(chatId, "Elija una categoría:");
+        listCategoriesUser(chatId);
+        userStates.put(chatId, "EDIT_PLACE_CATEGORY_" + placeName + "_" + newPlaceName + "_" + newDescription + "_" + newAddress);
     }
 
-    private void handleEditPlaceCategory(Long chatId, String idPlace, String newPlaceName, String newDescription, String newAddress, String newCategoryId) {
-        editPlace(chatId, idPlace, newPlaceName, newDescription, newAddress, newCategoryId);
+    private void handleEditPlaceCategory(Long chatId, String placeName, String newPlaceName, String newDescription, String newAddress, String newCategory) {
+        editPlace(chatId, placeName, newPlaceName, newDescription, newAddress, newCategory);
+    }
+
+    private void handleEditPlaceImageId(Long chatId, String placeName){
+        sendText(chatId, "Envie la URL de la imagen a añadir:");
+        userStates.put(chatId, "EDIT_PLACE_IMAGE_" + placeName);
+    }
+
+    private void handleEditPlaceImage (Long chatId, String idPlace, String urlImage){
+        addImage(chatId, idPlace, urlImage);
+    }
+
+    private void handleSearchingPlace (Long chatId, String parameter){
+        searchPlaces(chatId, parameter);
     }
 
     private void sendMenuStart(Long chatId) {
@@ -327,10 +378,15 @@ public class AdminBot extends TelegramLongPollingBot {
                 InlineKeyboardButton.builder().text("Eliminar Lugar").callbackData("delete_place").build()
         ));
 
+        rowsInline.add(Arrays.asList(
+                InlineKeyboardButton.builder().text("Buscar un Lugar").callbackData("search_place").build(),
+                InlineKeyboardButton.builder().text("Añadir Imagen al lugar").callbackData("image").build()
+        ));
+
         rowsInline.add(Collections.singletonList(
                 InlineKeyboardButton.builder().text("Cerrar Sesión").callbackData("logout").build()
         ));
-        sendMenu(chatId, rowsInline, "Menú de Categorías:");
+        sendMenu(chatId, rowsInline, "Menú de Administrador:");
     }
 
     private void sendMenu(Long chatId, List<List<InlineKeyboardButton>> rowsInline, String text) {
@@ -339,7 +395,6 @@ public class AdminBot extends TelegramLongPollingBot {
                 .text(text)
                 .replyMarkup(InlineKeyboardMarkup.builder().keyboard(rowsInline).build())
                 .build();
-
         try {
             execute(message);
         } catch (TelegramApiException e) {
@@ -352,7 +407,6 @@ public class AdminBot extends TelegramLongPollingBot {
                 .chatId(chatId.toString())
                 .text(text)
                 .build();
-
         try {
             execute(message);
         } catch (TelegramApiException e) {
@@ -430,46 +484,40 @@ public class AdminBot extends TelegramLongPollingBot {
         HttpHeaders headers = new HttpHeaders();
         String token = userTokens.get(chatId);
         if (token != null) {
-            headers.setBearerAuth(token); // Obtener el token del usuario
+            headers.setBearerAuth(token);
         }
+
         HttpEntity<CategoryRequest> entity = new HttpEntity<>(request, headers);
 
         try {
-            ResponseEntity<String> responseEntity = restTemplate.exchange(
-                    url, HttpMethod.POST, entity, String.class);
-
+            ResponseEntity<String> responseEntity = restTemplate.exchange(url, HttpMethod.POST, entity, String.class);
             String response = responseEntity.getBody();
-            if (response != null) {
-                sendText(chatId, response);
-            } else {
-                sendText(chatId, "Error al crear la categoría.");
-            }
+            sendText(chatId, response != null ? response : "Error al crear la categoría.");
         } catch (Exception e) {
             sendText(chatId, "Error al crear la categoría: " + e.getMessage());
         } finally {
             sendMenuCategories(chatId);
         }
     }
+
     private void listCategories(Long chatId) {
         if (isUserAuthenticated(chatId)) {
             sendText(chatId, "Debe iniciar sesión para acceder a esta funcionalidad.");
             sendMenuStart(chatId);
             return;
         }
-
-        String token = userTokens.get(chatId); // Obtener el token del usuario
+        String token = userTokens.get(chatId);
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(token);
-
         HttpEntity<Void> request = new HttpEntity<>(headers);
         String url = "http://localhost:8080/categories/allCategories";
-
         try {
             ResponseEntity<List<CategoryResponse>> responseEntity = restTemplate.exchange(url, HttpMethod.GET, request, new ParameterizedTypeReference<List<CategoryResponse>>() {});
-            if (responseEntity.getStatusCode().is2xxSuccessful() && responseEntity.getBody() != null) {
+            List<CategoryResponse> categories = responseEntity.getBody();
+            if (categories != null && !categories.isEmpty()) {
                 StringBuilder categoryList = new StringBuilder("Categorías:\n");
-                for (CategoryResponse category : responseEntity.getBody()) {
-                    categoryList.append("ID: ").append(category.getIdCategory()).append(", Nombre: ").append(category.getCategory()).append("\n");
+                for (CategoryResponse category : categories) {
+                    categoryList.append(category.getCategory()).append("\n");
                 }
                 sendText(chatId, categoryList.toString());
             } else {
@@ -481,34 +529,33 @@ public class AdminBot extends TelegramLongPollingBot {
             sendMenuCategories(chatId);
         }
     }
-    private void editCategory(Long chatId, String idCategory, String newCategory) {
+
+    private void editCategory(Long chatId, String currentCategoryName, String newCategoryName) {
         if (isUserAuthenticated(chatId)) {
             sendText(chatId, "Debe iniciar sesión para acceder a esta funcionalidad.");
             sendMenuStart(chatId);
             return;
         }
-
-        String token = userTokens.get(chatId); // Obtener el token del usuario
+        String token = userTokens.get(chatId);
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(token);
-        CategoryRequest categoryRequest = new CategoryRequest();
-        categoryRequest.setCategory(newCategory);
-        HttpEntity<CategoryRequest> request = new HttpEntity<>(categoryRequest, headers);
-
         try {
-            long id = Long.parseLong(idCategory);
-            String url = "http://localhost:8080/categories/edit/" + id;
+            String url = String.format(
+                    "http://localhost:8080/categories/edit?currentCategoryName=%s&newCategoryName=%s",
+                    URLEncoder.encode(currentCategoryName, StandardCharsets.UTF_8),
+                    URLEncoder.encode(newCategoryName, StandardCharsets.UTF_8)
+            );
+            HttpEntity<Void> request = new HttpEntity<>(headers);
             restTemplate.exchange(url, HttpMethod.PUT, request, Void.class);
-            sendText(chatId, "ID editado: " + idCategory + " Nueva categoría: " + newCategory);
-        } catch (NumberFormatException e) {
-            sendText(chatId, "ID inválido.");
+            sendText(chatId, "Categoría actualizada a: " + newCategoryName);
         } catch (Exception e) {
-            sendText(chatId, "Error: " + e.getMessage());
+            sendText(chatId, "Error al actualizar la categoría: " + e.getMessage());
         } finally {
             sendMenuCategories(chatId);
         }
     }
-    private void deleteCategory(Long chatId, String idCategory) {
+
+    private void deleteCategory(Long chatId, String categoryName) {
         if (isUserAuthenticated(chatId)) {
             sendText(chatId, "Debe iniciar sesión para acceder a esta funcionalidad.");
             sendMenuStart(chatId);
@@ -521,54 +568,44 @@ public class AdminBot extends TelegramLongPollingBot {
         HttpEntity<Void> request = new HttpEntity<>(headers);
 
         try {
-            long id = Long.parseLong(idCategory); // Convertir la cadena a Long
-            String url = "http://localhost:8080/categories/deleteCategory/" + id;
+            String url = String.format("http://localhost:8080/categories/deleteCategory?categoryName=%s",
+                    URLEncoder.encode(categoryName, StandardCharsets.UTF_8));
             restTemplate.exchange(url, HttpMethod.DELETE, request, Void.class);
-            sendText(chatId, "Categoría " + idCategory + " eliminada exitosamente.");
-        } catch (NumberFormatException e) {
-            sendText(chatId, "ID inválido.");
+            sendText(chatId, "Categoría '" + categoryName + "' eliminada exitosamente.");
         } catch (Exception e) {
-            sendText(chatId, "Error " + e.getMessage());
+            sendText(chatId, "Error al eliminar la categoría: " + e.getMessage());
         } finally {
             sendMenuCategories(chatId);
         }
     }
 
     //CRUD LUGARES
-    private void addPlace(Long chatId, String placeName, String placeDescription, String placeAddress, String idCategory){
+    private void addPlace(Long chatId, String placeName, String placeDescription, String placeAddress, String category) {
         if (isUserAuthenticated(chatId)) {
             sendText(chatId, "Debe iniciar sesión para acceder a esta funcionalidad.");
             sendMenuStart(chatId);
             return;
         }
-
-        long id = Long.parseLong(idCategory);
         String url = "http://localhost:8080/places/addPlace";
         PlaceRequest request = new PlaceRequest();
         request.setName(placeName);
         request.setDescription(placeDescription);
         request.setAddress(placeAddress);
-        request.setIdCategory(id);
+        request.setCategoryName(category);
 
         HttpHeaders headers = new HttpHeaders();
         String token = userTokens.get(chatId);
         if (token != null) {
-            headers.setBearerAuth(token); // Obtener el token del usuario
+            headers.setBearerAuth(token);
         }
-        HttpEntity<PlaceRequest> entity = new HttpEntity<>(request, headers);
 
+        HttpEntity<PlaceRequest> requestEntity = new HttpEntity<>(request, headers);
         try {
-            ResponseEntity<String> responseEntity = restTemplate.exchange(
-                    url, HttpMethod.POST, entity, String.class);
-
+            ResponseEntity<String> responseEntity = restTemplate.exchange(url, HttpMethod.POST, requestEntity, String.class);
             String response = responseEntity.getBody();
-            if (response != null) {
-                sendText(chatId, response);
-            } else {
-                sendText(chatId, "Error al crear la categoría.");
-            }
+            sendText(chatId, response != null ? response : "Error al crear el lugar.");
         } catch (Exception e) {
-            sendText(chatId, "Error al crear la categoría: " + e.getMessage());
+            sendText(chatId, "Error al crear el lugar: " + e.getMessage());
         } finally {
             sendMenuCategories(chatId);
         }
@@ -580,27 +617,35 @@ public class AdminBot extends TelegramLongPollingBot {
             sendMenuStart(chatId);
             return;
         }
-
-        String token = userTokens.get(chatId); // Obtener el token del usuario
+        String token = userTokens.get(chatId);
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(token);
 
         HttpEntity<Void> request = new HttpEntity<>(headers);
         String url = "http://localhost:8080/places/allPlaces";
-
         try {
             ResponseEntity<List<PlaceResponse>> responseEntity = restTemplate.exchange(url, HttpMethod.GET, request, new ParameterizedTypeReference<List<PlaceResponse>>() {});
-            if (responseEntity.getStatusCode().is2xxSuccessful() && responseEntity.getBody() != null) {
-                StringBuilder placeList = new StringBuilder("Lugares:\n\n");
-                for (PlaceResponse place : responseEntity.getBody()) {
-                    placeList.append("ID: ").append(place.getIdPlace()).append("\n")
-                            .append("Nombre: ").append(place.getName()).append("\n")
-                            .append("Descripción: ").append(place.getDescription()).append("\n")
-                            .append("Dirección: ").append(place.getAddress()).append("\n")
-                            .append("Categoria: ").append(place.getCategory()).append("\n")
-                            .append("\n\n");
+            List<PlaceResponse> places = responseEntity.getBody();
+            if (places != null && !places.isEmpty()) {
+                String placeList = "Lugares:\n\n";
+                // Enviar un mensaje por cada lugar
+                for (PlaceResponse place : places) {
+                    String placeDetails = "Nombre: " + place.getName() + "\n" +
+                            "Descripción: " + place.getDescription() + "\n";
+                    // Enviar detalles del lugar como texto
+                    sendText(chatId, placeDetails);
+                    // Enviar la imagen si la URL es válida
+                    String imageUrl = place.getImageUrl();
+                    if (imageUrl != null && !imageUrl.isEmpty() && isImageUrlAccessible(imageUrl)) {
+                        sendPhoto(chatId, imageUrl);
+                    }
+                    // Enviar la URL de Google Maps
+                    String mapsUrl = place.getAddress();
+                    if (mapsUrl != null && !mapsUrl.isEmpty()) {
+                        sendText(chatId, "Ubicación: " + mapsUrl);
+                    }
                 }
-                sendText(chatId, placeList.toString());
+                sendText(chatId, placeList);
             } else {
                 sendText(chatId, "No se encontraron lugares.");
             }
@@ -611,115 +656,242 @@ public class AdminBot extends TelegramLongPollingBot {
         }
     }
 
-    private void editPlace(Long chatId, String idPlace, String newPlaceName, String newDescription, String newAddress, String newCategoryId) {
+    private void listPlacesWithoutMenu(Long chatId) {
         if (isUserAuthenticated(chatId)) {
             sendText(chatId, "Debe iniciar sesión para acceder a esta funcionalidad.");
             sendMenuStart(chatId);
             return;
         }
-        String token = userTokens.get(chatId); // Obtener el token del usuario
+        String token = userTokens.get(chatId);
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(token);
 
-        long idCategory = Long.parseLong(newCategoryId);
+        HttpEntity<Void> request = new HttpEntity<>(headers);
+        String url = "http://localhost:8080/places/allPlaces";
+        try {
+            ResponseEntity<List<PlaceResponse>> responseEntity = restTemplate.exchange(url, HttpMethod.GET, request, new ParameterizedTypeReference<List<PlaceResponse>>() {});
+            List<PlaceResponse> places = responseEntity.getBody();
+            if (places != null && !places.isEmpty()) {
+                String placeList = "Lugares:\n\n";
+                // Enviar un mensaje por cada lugar
+                for (PlaceResponse place : places) {
+                    String placeDetails =
+                            "Nombre: " + place.getName() + "\n" +
+                            "Descripción: " + place.getDescription() + "\n" +
+                            "Ubicación: " + place.getAddress() + "\n\n";
+                    // Enviar detalles del lugar como texto
+                    sendText(chatId, placeDetails);
+                }
+                sendText(chatId, placeList);
+            } else {
+                sendText(chatId, "No se encontraron lugares.");
+            }
+        } catch (Exception e) {
+            sendText(chatId, "Error al cargar lugares: " + e.getMessage());
+        }
+    }
+
+    private void editPlace(Long chatId, String placeName, String newPlaceName, String newDescription, String newAddress, String newCategoryName) {
+        if (isUserAuthenticated(chatId)) {
+            sendText(chatId, "Debe iniciar sesión para acceder a esta funcionalidad.");
+            sendMenuStart(chatId);
+            return;
+        }
+        String token = userTokens.get(chatId);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(token);
         PlaceRequest placeRequest = new PlaceRequest();
         placeRequest.setName(newPlaceName);
         placeRequest.setDescription(newDescription);
         placeRequest.setAddress(newAddress);
-        placeRequest.setIdCategory(idCategory);
+        placeRequest.setCategoryName(newCategoryName);
         HttpEntity<PlaceRequest> request = new HttpEntity<>(placeRequest, headers);
-
         try {
-            long id = Long.parseLong(idPlace);
-            String url = "http://localhost:8080/places//updatePlace/" + id;
+            String url = String.format("http://localhost:8080/places/updatePlace?placeName=%s", URLEncoder.encode(placeName, StandardCharsets.UTF_8));
             restTemplate.exchange(url, HttpMethod.PATCH, request, Void.class);
-            sendText(chatId, "ID editado: " + idPlace + ", Nombre: " + Objects.requireNonNull(request.getBody()).getName());
-        } catch (RestClientException e) {
+            sendText(chatId, "Lugar editado exitosamente. Nombre: " + newPlaceName);
+        } catch (Exception e) {
             sendText(chatId, "Error al editar lugar: " + e.getMessage());
         } finally {
             sendMenuCategories(chatId);
         }
     }
 
-    private void deletePlace(Long chatId, String idPlace) {
+    private void deletePlace(Long chatId, String placeName) {
         if (isUserAuthenticated(chatId)) {
             sendText(chatId, "Debe iniciar sesión para acceder a esta funcionalidad.");
             sendMenuStart(chatId);
             return;
         }
-        String token = userTokens.get(chatId); // Obtener el token del usuario
+        String token = userTokens.get(chatId);
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(token);
         HttpEntity<Void> request = new HttpEntity<>(headers);
-
         try {
-            long id = Long.parseLong(idPlace); // Convertir la cadena a Long
-            String url = "http://localhost:8080/places/deletePlace/" + id;
+            String url = String.format("http://localhost:8080/places/deletePlace?placeName=%s", URLEncoder.encode(placeName, StandardCharsets.UTF_8));
             restTemplate.exchange(url, HttpMethod.DELETE, request, Void.class);
-            sendText(chatId, "Lugar " + idPlace + " eliminado exitosamente.");
-        } catch (NumberFormatException e) {
-            sendText(chatId, "ID inválido.");
+            sendText(chatId, "Lugar '" + placeName + "' eliminado exitosamente.");
         } catch (Exception e) {
-            sendText(chatId, "Error " + e.getMessage());
+            sendText(chatId, "Error al eliminar el lugar: " + e.getMessage());
         } finally {
             sendMenuCategories(chatId);
         }
     }
 
-    //METODOS DE USUARIOS
-    //Método para que el usuario elija una categoria
+    public void addImage(Long chatId, String placeName, String imageUrl) {
+        if (isUserAuthenticated(chatId)) {
+            sendText(chatId, "Debe iniciar sesión para acceder a esta funcionalidad.");
+            sendMenuStart(chatId);
+            return;
+        }
+        String token = userTokens.get(chatId);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(token);
+        PlaceRequest placeRequest = new PlaceRequest();
+        placeRequest.setImageUrl(imageUrl);
+        HttpEntity<PlaceRequest> placeRequestHttpEntity = new HttpEntity<>(placeRequest, headers);
+        try {
+            String url = String.format("http://localhost:8080/places/addImage?placeName=%s", URLEncoder.encode(placeName, StandardCharsets.UTF_8));
+            restTemplate.exchange(url, HttpMethod.PATCH, placeRequestHttpEntity, Void.class);
+            sendText(chatId, "Imagen agregada exitosamente.");
+        } catch (RestClientException e) {
+            sendText(chatId, "Error al cargar la imagen: " + e.getMessage());
+        } finally {
+            sendMenuCategories(chatId);
+        }
+    }
+
+    public void searchPlaces(Long chatId, String searchTerm) {
+        try {
+            List<PlaceResponse> places = placeService.searchPlaces(searchTerm);
+            if (places.isEmpty()) {
+                sendText(chatId, "No se encontraron lugares para la búsqueda: " + searchTerm);
+            } else {
+                // Enviar un mensaje por cada lugar
+                for (PlaceResponse place : places) {
+                    String placeDetails =
+                            "Nombre: " + place.getName() + "\n" +
+                            "Descripción: " + place.getDescription() + "\n";
+                    // Enviar detalles del lugar como texto
+                    sendText(chatId, placeDetails);
+                    // Enviar la imagen si la URL es válida
+                    String imageUrl = place.getImageUrl();
+                    if (imageUrl != null && !imageUrl.isEmpty() && isImageUrlAccessible(imageUrl)) {
+                        sendPhoto(chatId, imageUrl);
+                    }
+                    // Enviar la URL de Google Maps
+                    String mapsUrl = place.getAddress();
+                    if (mapsUrl != null && !mapsUrl.isEmpty()) {
+                        sendText(chatId, "Ubicación: " + mapsUrl);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            sendText(chatId, "Error al buscar lugares: " + e.getMessage());
+        } finally {
+            sendMenuCategories(chatId);
+        }
+    }
+
+    //MÉTODOS DE USUARIOS
+    //Método para que el usuario elija una categoría
     private void listCategoriesUser(Long chatId) {
         String url = "http://localhost:8080/categories/allCategories";
-
         try {
-            ResponseEntity<List<CategoryResponse>> responseEntity = restTemplate.exchange(url, HttpMethod.GET, new HttpEntity<>(new HttpHeaders()), new ParameterizedTypeReference<List<CategoryResponse>>() {});
+            ResponseEntity<List<CategoryResponse>> responseEntity = restTemplate.exchange(
+                    url, HttpMethod.GET, new HttpEntity<>(new HttpHeaders()),
+                    new ParameterizedTypeReference<List<CategoryResponse>>() {}
+            );
             if (responseEntity.getStatusCode().is2xxSuccessful() && responseEntity.getBody() != null) {
-                StringBuilder categoryList = new StringBuilder();
-                for (CategoryResponse category : responseEntity.getBody()) {
-                    categoryList.append("ID: ").append(category.getIdCategory()).append(", Nombre: ").append(category.getCategory()).append("\n");
+                List<CategoryResponse> categories = responseEntity.getBody();
+                if (categories.isEmpty()) {
+                    sendText(chatId, "No hay categorías disponibles.");
+                } else {
+                    StringBuilder categoryList = new StringBuilder("Categorías:\n");
+                    for (CategoryResponse category : categories) {
+                        categoryList.append(category.getCategory()).append("\n");
+                    }
+                    sendText(chatId, categoryList.toString());
                 }
-                sendText(chatId, categoryList.toString());
+            } else {
+                sendText(chatId, "No se pudieron cargar las categorías.");
             }
         } catch (Exception e) {
             sendText(chatId, "Error al cargar categorías: " + e.getMessage());
         }
-
     }
 
-    //Metodo para listar lugares por categoria al usuario
-    private void listPlacesByCategory(Long chatId, String idCategory) {
+    //Método para listar los lugares de una categoría
+    private void listPlacesByCategory(Long chatId, String category) {
         try {
-            // Convertir el idCategory de String a Long
-            long id = Long.parseLong(idCategory);
-            String url = "http://localhost:8080/places/placesByCategory/" + id;
+            // Obtener el idCategory usando el nombre de la categoría
+            Long idCategory = categoryService.getCategoryIdByName(category);
 
+            String url = "http://localhost:8080/places/placesByCategory/" + idCategory;
             ResponseEntity<List<PlaceResponse>> responseEntity = restTemplate.exchange(
                     url, HttpMethod.GET, new HttpEntity<>(new HttpHeaders()),
                     new ParameterizedTypeReference<List<PlaceResponse>>() {}
             );
-
             if (responseEntity.getStatusCode().is2xxSuccessful() && responseEntity.getBody() != null) {
                 List<PlaceResponse> places = responseEntity.getBody();
                 if (places.isEmpty()) {
-                    sendText(chatId, "No se encontraron lugares para la categoría: " + idCategory);
+                    sendText(chatId, "No se encontraron lugares para la categoría: " + category);
                 } else {
-                    StringBuilder placeList = new StringBuilder("Lugares:\n\n");
+                    // Enviar un mensaje por cada lugar
                     for (PlaceResponse place : places) {
-                        placeList.append("ID: ").append(place.getIdPlace()).append("\n")
-                                .append("Nombre: ").append(place.getName()).append("\n")
-                                .append("Descripción: ").append(place.getDescription()).append("\n")
-                                .append("Dirección: ").append(place.getAddress()).append("\n")
-                                .append("\n");
+                        String placeDetails = "Nombre: " + place.getName() + "\n" +
+                                "Descripción: " + place.getDescription() + "\n";
+                        // Enviar detalles del lugar como texto
+                        sendText(chatId, placeDetails);
+                        // Enviar la imagen si la URL es válida
+                        String imageUrl = place.getImageUrl();
+                        if (imageUrl != null && !imageUrl.isEmpty() && isImageUrlAccessible(imageUrl)) {
+                            sendPhoto(chatId, imageUrl);
+                        }
+                        // Enviar la URL de Google Maps
+                        String mapsUrl = place.getAddress();
+                        if (mapsUrl != null && !mapsUrl.isEmpty()) {
+                            sendText(chatId, "Ubicación: " + mapsUrl);
+                        }
                     }
-                    sendText(chatId, placeList.toString());
                 }
+            } else {
+                sendText(chatId, "No se pudieron cargar los lugares para la categoría: " + category);
             }
         } catch (NumberFormatException e) {
-            sendText(chatId, "ID de categoría no válido. Por favor, ingresa un número válido.");
+            sendText(chatId, "ID de categoría no válido. Por favor, ingresa un nombre válido.");
         } catch (Exception e) {
             sendText(chatId, "Error al cargar lugares: " + e.getMessage());
         } finally {
             sendMenuStart(chatId);
+        }
+    }
+
+    private boolean isImageUrlAccessible(String imageUrl) {
+        try {
+            HttpURLConnection connection = (HttpURLConnection) new URL(imageUrl).openConnection();
+            connection.setRequestMethod("HEAD");
+            int responseCode = connection.getResponseCode();
+            return (responseCode >= 200 && responseCode < 400);
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    private void sendPhoto(Long chatId, String photoUrl) {
+        try {
+            String url = "https://api.telegram.org/bot" + botToken + "/sendPhoto";
+            Map<String, Object> request = new HashMap<>();
+            request.put("chat_id", chatId);
+            request.put("photo", photoUrl);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
+            restTemplate.postForObject(url, entity, String.class);
+        } catch (Exception e) {
+            sendText(chatId, "Error al enviar la foto: " + e.getMessage());
         }
     }
 }

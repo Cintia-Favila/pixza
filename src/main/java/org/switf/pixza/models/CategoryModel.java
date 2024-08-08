@@ -23,7 +23,7 @@ public class CategoryModel {
     private Long idCategory;
     private String category;
 
-    @OneToMany(targetEntity = PlaceModel.class, fetch = FetchType.EAGER, mappedBy = "category", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(targetEntity = PlaceModel.class, fetch = FetchType.LAZY, mappedBy = "category", cascade = CascadeType.ALL, orphanRemoval = true)
     @JsonIgnore
     private List<PlaceModel> placeModels;
 

@@ -12,14 +12,16 @@ public class PlaceResponse {
     private String name;
     private String description;
     private String address;
-    private String category;
+    private String imageUrl;
+    private String categoryName;
     private String user;
 
-    public PlaceResponse(Long idPlace, String name, String description, String address, String category) {
+    public PlaceResponse(Long idPlace, String name, String description, String address, String imageUrl, String category) {
         this.idPlace = idPlace;
         this.name = name;
         this.description = description;
         this.address = address;
-        this.category = category;
+        this.imageUrl = imageUrl;
+        this.categoryName = category;
     }
 }

@@ -11,7 +11,11 @@ public interface CategoryService {
 
     List<CategoryResponse> getAllCategories();
 
-    CategoryResponse updateCategoryById(Long idCategory, CategoryRequest categoryRequest);
+    // Método para actualizar una categoría
+    CategoryResponse updateCategoryByName(String currentCategoryName, String newCategoryName);
 
-    void deleteCategoryById(Long idCategory);
+    // Método para eliminar una categoría
+    void deleteCategoryByName(String categoryName);
+
+    Long getCategoryIdByName(String categoryName);
 }

@@ -1,7 +1,5 @@
 package org.switf.pixza.servicesImpl;
 
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -18,6 +16,7 @@ import org.switf.pixza.response.CategoryResponse;
 import org.switf.pixza.services.CategoryService;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -29,9 +28,6 @@ public class CategoryServiceImpl implements CategoryService {
     @Autowired
     private UserJpaRepository userJpaRepository;
 
-    @PersistenceContext
-    private EntityManager entityManager;
-
     // Método para obtener el usuario autenticado
     private UserModel getAuthenticatedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -39,14 +35,14 @@ public class CategoryServiceImpl implements CategoryService {
                 .orElseThrow(() -> new AuthenticationException("Please Login"));
     }
 
-    // Método para crear una nueva categoria
+    // Método para crear una nueva categoría
     @Override
     public CategoryResponse createCategory(CategoryRequest categoryRequest) {
         UserModel user = getAuthenticatedUser();
 
         // Verificar si la categoría ya existe
-        CategoryModel existingCategory = categoryJpaRepository.findByCategory(categoryRequest.getCategory());
-        if (existingCategory != null) {
+        Optional<CategoryModel> existingCategory = categoryJpaRepository.findByCategory(categoryRequest.getCategory());
+        if (existingCategory.isPresent()) {
             throw new DuplicateCategoryException("La categoría ya existe.");
         }
 
@@ -62,7 +58,7 @@ public class CategoryServiceImpl implements CategoryService {
         );
     }
 
-    // Método para listar categorias
+    // Método para listar categorías
     @Override
     public List<CategoryResponse> getAllCategories() {
         return categoryJpaRepository.findAllByOrderByIdCategoryAsc().stream()
@@ -73,17 +69,23 @@ public class CategoryServiceImpl implements CategoryService {
                 .collect(Collectors.toList());
     }
 
-    // Método para actualizar una categoria
+    // Método para actualizar una categoría
     @Override
-    public CategoryResponse updateCategoryById(Long idCategory, CategoryRequest categoryRequest) {
+    public CategoryResponse updateCategoryByName(String category, String newCategoryName) {
         UserModel user = getAuthenticatedUser();
 
-        // Buscar la categoría por su ID
-        CategoryModel categoryModel = categoryJpaRepository.findById(idCategory)
-                .orElseThrow(() -> new CategoryNotFoundException("ID " + idCategory + " no encontrado"));
+        // Buscar la categoría por su nombre actual
+        CategoryModel categoryModel = categoryJpaRepository.findByCategory(category)
+                .orElseThrow(() -> new CategoryNotFoundException("Categoría " + category + " no encontrada"));
+
+        // Verificar si el nuevo nombre es diferente del actual
+        if (categoryModel.getCategory().equals(newCategoryName)) {
+            throw new IllegalArgumentException("El nuevo nombre de la categoría es el mismo que el actual");
+        }
+
         try {
             // Actualizar la categoría con la nueva información
-            categoryModel.setCategory(categoryRequest.getCategory());
+            categoryModel.setCategory(newCategoryName);
             categoryModel.setUser(user);
 
             CategoryModel updatedCategory = categoryJpaRepository.save(categoryModel);
@@ -97,12 +99,21 @@ public class CategoryServiceImpl implements CategoryService {
         }
     }
 
-    // Método para eliminar una categoria
+    // Método para eliminar una categoría
     @Override
-    public void deleteCategoryById(Long idCategory) {
-        CategoryModel categoryModel = categoryJpaRepository.findById(idCategory)
-                .orElseThrow(() -> new CategoryNotFoundException("Categoria no encontrada"));
+    public void deleteCategoryByName(String categoryName) {
+        // Buscar la categoría por nombre
+        CategoryModel categoryModel = categoryJpaRepository.findByCategory(categoryName)
+                .orElseThrow(() -> new CategoryNotFoundException("Categoría " + categoryName + " no encontrada"));
+        // Eliminar la categoría
         categoryJpaRepository.delete(categoryModel);
-}
+    }
+
+    //Método para encontrar el ID de una categoría
+    @Override
+    public Long getCategoryIdByName(String categoryName) {
+            Optional<CategoryModel> categoryModel = categoryJpaRepository.findByCategory(categoryName);
+            return categoryModel.get().getIdCategory();
+    }
 }
 

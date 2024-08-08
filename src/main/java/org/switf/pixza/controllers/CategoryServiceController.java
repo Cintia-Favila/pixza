@@ -38,11 +38,11 @@ public class CategoryServiceController {
         }
     }
 
-    @PutMapping("/edit/{idCategory}")
-    public ResponseEntity<?> updateCategory(@PathVariable Long idCategory, @RequestBody CategoryRequest categoryRequest) {
+    @PutMapping("/edit")
+    public ResponseEntity<?> updateCategory(@RequestParam String currentCategoryName, @RequestParam String newCategoryName) {
         try {
-            CategoryResponse updatedCategory = categoryService.updateCategoryById(idCategory, categoryRequest);
-            return ResponseEntity.ok("ID editado: " + updatedCategory.getIdCategory() + ", Nueva categoria: " + updatedCategory.getCategory());
+            CategoryResponse updatedCategory = categoryService.updateCategoryByName(currentCategoryName, newCategoryName);
+            return ResponseEntity.ok("Nueva categoría: " + updatedCategory.getCategory());
         } catch (CategoryNotFoundException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
         } catch (Exception e) {
@@ -50,11 +50,11 @@ public class CategoryServiceController {
         }
     }
 
-    @DeleteMapping("/deleteCategory/{idCategory}")
-    public ResponseEntity<?> deleteCategory(@PathVariable Long idCategory) {
+    @DeleteMapping("/deleteCategory")
+    public ResponseEntity<?> deleteCategory(@RequestParam String categoryName) {
         try {
-            categoryService.deleteCategoryById(idCategory);
-            return ResponseEntity.ok("ID " + idCategory + " eliminado exitosamente");
+            categoryService.deleteCategoryByName(categoryName);
+            return ResponseEntity.ok("Categoría " + categoryName + " eliminada exitosamente");
         } catch (CategoryNotFoundException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
         } catch (Exception e) {

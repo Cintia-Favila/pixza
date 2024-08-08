@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.transaction.annotation.Transactional;
 
 @AllArgsConstructor
 @NoArgsConstructor
@@ -12,6 +13,7 @@ import lombok.NoArgsConstructor;
 @Data
 @Entity
 @Table(name = "places")
+@Transactional
 public class PlaceModel {
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "place_seq")
@@ -20,8 +22,9 @@ public class PlaceModel {
     private String name;
     private String description;
     private String address;
-    private double latitude;
-    private double length;
+//    private double latitude;
+//    private double longitude;
+    private String imageUrl;
 
     @ManyToOne(targetEntity = CategoryModel.class)
     private CategoryModel category;

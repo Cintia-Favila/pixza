@@ -7,14 +7,20 @@ import java.util.List;
 
 public interface PlaceService {
     PlaceResponse createPlace(PlaceRequest placeRequest);
-
-
+    
     // Método para listar lugares
     List<PlaceResponse> getAllPlaces();
 
     List<PlaceResponse> getPlacesByCategory(Long categoryId);
 
-    PlaceResponse updatePlaceById(Long idPlace, PlaceRequest placeRequest);
+    // Método para actualizar un lugar existente
+    PlaceResponse updatePlaceByName(String placeName, PlaceRequest newPlaceModel);
 
-    void deleteCategoryById(Long idPlace);
+    // Método para eliminar un lugar
+    void deleteCategoryByName(String placeName);
+
+    PlaceResponse savePlaceUrlImage(String placeName, PlaceRequest urlImage);
+
+    //Método para buscar un lugar
+    List<PlaceResponse> searchPlaces(String searchTerm);
 }

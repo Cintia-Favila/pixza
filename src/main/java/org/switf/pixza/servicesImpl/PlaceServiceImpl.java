@@ -3,10 +3,8 @@ package org.switf.pixza.servicesImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
-import org.switf.pixza.config.GeocodingService;
 import org.switf.pixza.exceptions.AuthenticationException;
 import org.switf.pixza.exceptions.CategoryNotFoundException;
-import org.switf.pixza.exceptions.CoordinateException;
 import org.switf.pixza.exceptions.PlaceNotFoundException;
 import org.switf.pixza.models.CategoryModel;
 import org.switf.pixza.models.PlaceModel;
@@ -34,23 +32,10 @@ public class PlaceServiceImpl implements PlaceService {
     @Autowired
     private UserJpaRepository userJpaRepository;
 
-    @Autowired
-    private GeocodingService geocodingService;
-
-    // Método para obtener coordenadas desde una dirección
-    private double[] getCoordinates(String address) {
-        String latLong = geocodingService.getLatLongFromAddress(address);
-        if (latLong.startsWith("Error")) {
-            throw new CoordinateException("Error al obtener coordenadas: " + latLong);
-        }
-        String[] parts = latLong.split(",");
-        return new double[] { Double.parseDouble(parts[0]), Double.parseDouble(parts[1]) };
-    }
-
-    // Método para obtener una categoría por su ID
-    private CategoryModel getCategory(Long categoryId) {
-        return categoryJpaRepository.findById(categoryId)
-                .orElseThrow(() -> new CategoryNotFoundException("Categoría no encontrada."));
+    // Método para obtener una categoría por su nombre
+    private CategoryModel getCategoryByName(String categoryName) {
+        return categoryJpaRepository.findByCategory(categoryName)
+                .orElseThrow(() -> new CategoryNotFoundException("Category not found"));
     }
 
     // Método para obtener el usuario autenticado
@@ -63,16 +48,14 @@ public class PlaceServiceImpl implements PlaceService {
     // Método para crear un nuevo lugar
     @Override
     public PlaceResponse createPlace(PlaceRequest placeRequest) {
-        double[] coordinates = getCoordinates(placeRequest.getAddress());
-        CategoryModel category = getCategory(placeRequest.getIdCategory());
+        CategoryModel category = getCategoryByName(placeRequest.getCategoryName()); // Obtener la categoría por nombre
         UserModel user = getAuthenticatedUser();
 
         PlaceModel placeModel = new PlaceModel();
         placeModel.setName(placeRequest.getName());
         placeModel.setDescription(placeRequest.getDescription());
         placeModel.setAddress(placeRequest.getAddress());
-        placeModel.setLatitude(coordinates[0]);
-        placeModel.setLength(coordinates[1]);
+        placeModel.setImageUrl(placeRequest.getImageUrl());
         placeModel.setCategory(category);
         placeModel.setUser(user);
 
@@ -83,7 +66,8 @@ public class PlaceServiceImpl implements PlaceService {
                 savedPlace.getName(),
                 savedPlace.getDescription(),
                 savedPlace.getAddress(),
-                savedPlace.getCategory().getIdCategory().toString()
+                savedPlace.getImageUrl(),
+                savedPlace.getCategory().getCategory()
         );
     }
 
@@ -96,13 +80,14 @@ public class PlaceServiceImpl implements PlaceService {
                         place.getName(),
                         place.getDescription(),
                         place.getAddress(),
-                        place.getCategory().getIdCategory().toString(),
+                        place.getImageUrl(),
+                        place.getCategory().getCategory(),
                         place.getUser().getUsername()
                 ))
                 .collect(Collectors.toList());
     }
 
-    //Método para listar los lugares de una categoria
+    //Método para listar los lugares de una categoría
     @Override
     public List<PlaceResponse> getPlacesByCategory(Long idCategory) {
         List<PlaceModel> places = placeJpaRepository.findByCategory_IdCategory(idCategory);
@@ -112,34 +97,35 @@ public class PlaceServiceImpl implements PlaceService {
                         place.getName(),
                         place.getDescription(),
                         place.getAddress(),
-                        place.getCategory().getIdCategory().toString(),
+                        place.getImageUrl(),
+                        place.getCategory().getCategory(),
                         place.getUser().getUsername()))
                 .collect(Collectors.toList());
     }
 
+
     // Método para actualizar un lugar existente
     @Override
-    public PlaceResponse updatePlaceById(Long idPlace, PlaceRequest placeRequest) {
+    public PlaceResponse updatePlaceByName(String placeName, PlaceRequest newPlaceModel) {
         UserModel user = getAuthenticatedUser();
-        PlaceModel placeModel = placeJpaRepository.findById(idPlace)
+
+        // Buscar el lugar por nombre
+        PlaceModel placeModel = (PlaceModel) placeJpaRepository.findByName(placeName)
                 .orElseThrow(() -> new PlaceNotFoundException("Lugar no encontrado."));
 
-        CategoryModel categoryModel = categoryJpaRepository.findById(placeRequest.getIdCategory())
-                .orElseThrow(() -> new CategoryNotFoundException("Categoría no encontrada."));
+        // Buscar la categoría por nombre
+        CategoryModel categoryModel = categoryJpaRepository.findByCategory(newPlaceModel.getCategoryName())
+                .orElseThrow(() -> new CategoryNotFoundException("Categoría: " + newPlaceModel.getCategoryName() + " no encontrada."));
 
-        // Actualizar coordenadas si la dirección ha cambiado
-        if (!placeModel.getAddress().equals(placeRequest.getAddress())) {
-            double[] coordinates = getCoordinates(placeRequest.getAddress());
-            placeModel.setLatitude(coordinates[0]);
-            placeModel.setLength(coordinates[1]);
-        }
-
-        placeModel.setName(placeRequest.getName());
-        placeModel.setDescription(placeRequest.getDescription());
-        placeModel.setAddress(placeRequest.getAddress());
+        // Actualizar el lugar
+        placeModel.setName(newPlaceModel.getName());
+        placeModel.setDescription(newPlaceModel.getDescription());
+        placeModel.setAddress(newPlaceModel.getAddress());
+        placeModel.setImageUrl(newPlaceModel.getImageUrl());
         placeModel.setCategory(categoryModel);
         placeModel.setUser(user);
 
+        // Guardar el lugar actualizado
         PlaceModel updatedPlace = placeJpaRepository.save(placeModel);
 
         return new PlaceResponse(
@@ -147,17 +133,61 @@ public class PlaceServiceImpl implements PlaceService {
                 updatedPlace.getName(),
                 updatedPlace.getDescription(),
                 updatedPlace.getAddress(),
-                updatedPlace.getCategory().getIdCategory().toString(),
+                updatedPlace.getImageUrl(),
+                updatedPlace.getCategory().getCategory(),
                 updatedPlace.getUser().getIdUser().toString()
         );
     }
 
     // Método para eliminar un lugar
     @Override
-    public void deleteCategoryById(Long idPlace) {
-        PlaceModel placeModel = placeJpaRepository.findById(idPlace)
+    public void deleteCategoryByName(String placeName) {
+        PlaceModel placeModel = (PlaceModel) placeJpaRepository.findByName(placeName)
                 .orElseThrow(() -> new PlaceNotFoundException("Lugar no encontrado."));
         placeJpaRepository.delete(placeModel);
+    }
+
+    @Override
+    public PlaceResponse savePlaceUrlImage(String placeName, PlaceRequest urlImage) {
+        UserModel user = getAuthenticatedUser();
+
+        // Buscar el lugar por nombre
+        PlaceModel placeModel = (PlaceModel) placeJpaRepository.findByName(placeName)
+                .orElseThrow(() -> new PlaceNotFoundException("Lugar no encontrado."));
+
+        // Actualizar la URL de la imagen
+        String imageUrlReceived = urlImage.getImageUrl();
+        placeModel.setImageUrl(imageUrlReceived);
+
+        // Guardar los cambios en el repositorio
+        PlaceModel updatedPlace = placeJpaRepository.save(placeModel);
+
+        // Crear y devolver la respuesta
+        PlaceResponse placeResponse = new PlaceResponse();
+        placeResponse.setIdPlace(updatedPlace.getIdPlace());
+        placeResponse.setName(updatedPlace.getName());
+        placeResponse.setDescription(updatedPlace.getDescription());
+        placeResponse.setAddress(updatedPlace.getAddress());
+        placeResponse.setImageUrl(updatedPlace.getImageUrl());
+
+        return placeResponse;
+    }
+
+
+    //Método para buscar un lugar
+    @Override
+    public List<PlaceResponse> searchPlaces(String searchTerm) {
+        List<PlaceModel> placeModels = placeJpaRepository.findByNameContainingOrDescriptionContainingOrAddressContainingOrCategory_CategoryContaining(searchTerm, searchTerm, searchTerm, searchTerm);
+        return placeModels.stream()
+                .map(place -> new PlaceResponse(
+                        place.getIdPlace(),
+                        place.getName(),
+                        place.getDescription(),
+                        place.getAddress(),
+                        place.getImageUrl(),
+                        place.getCategory().getCategory()
+                ))
+                .collect(Collectors.toList());
     }
 }
 
