@@ -2,11 +2,7 @@ version: '3.8'
 
 services:
   app:
-    image: openjdk:17-jdk-alpine
-    container_name: pixza_app
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
     ports:
       - "8080:8080"
     environment:
@@ -22,16 +18,12 @@ services:
       - db
 
   db:
-    image: postgres:13
+    image: 'postgres:13.1-alpine'
     container_name: pixza_db
     environment:
-      POSTGRES_DB: pixza
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      - POSTGRES_DB= pixza
+      - POSTGRES_USER= postgres
+      - POSTGRES_PASSWORD= postgres
     ports:
       - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
 
-volumes:
-  postgres_data:
