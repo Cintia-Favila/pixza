@@ -7,7 +7,7 @@ import org.switf.pixza.models.UserModel;
 import java.util.Optional;
 
 @Repository
-public interface UserJpaRepository extends JpaRepository<UserModel, Integer> {
+public interface UserJpaRepository extends JpaRepository<UserModel, Long> {
     Optional<UserModel> findByUsername(String username);
 }
 

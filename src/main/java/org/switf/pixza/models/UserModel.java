@@ -18,7 +18,7 @@ public class UserModel implements UserDetails {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
-    private Integer idUser;
+    private Long idUser;
     @Column(nullable = false)
     private String username;
     private String password;
