@@ -1,4 +1,4 @@
 -------------------------------------------------------------------------------
 Test set: org.switf.pixza.PixzaApplicationTests
 -------------------------------------------------------------------------------
-Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 11.60 s -- in org.switf.pixza.PixzaApplicationTests
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 10.74 s -- in org.switf.pixza.PixzaApplicationTests
