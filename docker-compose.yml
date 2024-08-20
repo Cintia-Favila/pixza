@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      database_host: db
+      database_name: pixza
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: "true"
+      SPRING_JPA_OPEN_IN_VIEW: "false"
+      TELEGRAM_BOT_NAME: Pixzabot
+      TELEGRAM_BOT_TOKEN: 7094226629:AAEeSbu36QHLZfeMIHOejOTdJdZ8O0MBME8
+    depends_on:
+      - db
+
+  db:
+    image: 'postgres:13.1-alpine'
+    container_name: pixza_db
+    environment:
+      - POSTGRES_DB=pixza
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
