@@ -1,4 +1,4 @@
-# Created at 2024-08-20T00:26:30.813
+# Created at 2024-08-20T01:01:26.242
 Boot Manifest-JAR contains absolute paths in classpath 'E:\Documents\Intellij idea\Hackademy\pixza\target\test-classes'
 Hint: <argLine>-Djdk.net.URLClassPath.disableClassPathURLCheck=true</argLine>
 'other' has different root

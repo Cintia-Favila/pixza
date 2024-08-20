@@ -10,9 +10,7 @@ services:
       database_name: pixza
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
-      SPRING_JPA_HIBERNATE_DDL_AUTO: update
-      SPRING_JPA_SHOW_SQL: "true"
-      SPRING_JPA_OPEN_IN_VIEW: "false"
+
       TELEGRAM_BOT_NAME: Pixzabot
       TELEGRAM_BOT_TOKEN: 7094226629:AAEeSbu36QHLZfeMIHOejOTdJdZ8O0MBME8
     depends_on:
