@@ -117,11 +117,6 @@
             <artifactId>hibernate-core</artifactId>
             <version>6.5.0.CR2</version>
         </dependency>
-        <dependency>
-            <groupId>org.json</groupId>
-            <artifactId>json</artifactId>
-            <version>20231013</version>
-        </dependency>
     </dependencies>
     <build>
         <plugins>

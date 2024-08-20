@@ -10,6 +10,6 @@ FROM amazoncorretto:17-alpine-jdk
 
 WORKDIR /app
 
-COPY --from=Build /app/target/pixza-0.0.1-SNAPSHOT.jar .
+COPY --from=build /app/target/pixza-0.0.1-SNAPSHOT.jar .
 
-ENTRYPOINT ["java", "-jar", "-Dspring.profiles.active=envs", "pixza-0.0.1-SNAPSHOT.jar"]
+ENTRYPOINT ["java", "-Dspring.profiles.active=envs", "-jar", "pixza-0.0.1-SNAPSHOT.jar"]
